@@ -54,6 +54,23 @@ const hasPushQuery = (c: Context) => {
   return pushParameterKeys.some((key) => searchParams.has(key));
 };
 
+const requestHasBody = async (c: Context) => {
+  if (c.req.method === 'GET' || c.req.method === 'HEAD') {
+    return false;
+  }
+
+  const contentLength = c.req.header('Content-Length');
+  if (contentLength) {
+    return Number(contentLength) > 0;
+  }
+
+  if (!c.req.header('Content-Type') && !c.req.header('Transfer-Encoding')) {
+    return false;
+  }
+
+  return (await c.req.raw.clone().text()).length > 0;
+};
+
 const registerV1 = async (app: Hono, api: API) => {
   app.get('/:device_key', async (c) =>
     c.json(
@@ -211,15 +228,20 @@ export const createHono = <T extends Env>(options: Options) => {
   // compat v1 API
   registerV1(router as unknown as Hono, api);
 
-  router.get('/:device_key/', async (c) => {
-    if (!hasPushQuery(c)) {
+  router.all('/:device_key/', async (c) => {
+    const hasBody = await requestHasBody(c);
+    if (!hasPushQuery(c) && !hasBody) {
       return c.text('ok');
     }
+
+    const parameters = hasBody
+      ? await parseBody<PushParameters>(c)
+      : parseQuery(c, ['device_key']);
 
     return c.json(
       await api.push(
         {
-          ...parseQuery(c, ['device_key']),
+          ...parameters,
           device_key: parseParam(c.req.param('device_key')),
         },
         c,
