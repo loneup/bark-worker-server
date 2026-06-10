@@ -12,32 +12,33 @@ const parseBody = async <T = any>(c: Context): Promise<T> => {
   return isJSON ? await c.req.json() : ((await c.req.parseBody()) as T);
 };
 
+const pushParameterKeys: Array<keyof PushParameters> = [
+  'title',
+  'subtitle',
+  'body',
+  'sound',
+  'group',
+  'call',
+  'isArchive',
+  'icon',
+  'ciphertext',
+  'level',
+  'volume',
+  'url',
+  'image',
+  'copy',
+  'badge',
+  'autoCopy',
+  'action',
+  'iv',
+  'id',
+  'delete',
+  'markdown',
+];
+
 const parseQuery = (c: Context, exclude?: Array<keyof PushParameters>) => {
-  const list: Array<keyof PushParameters> = [
-    'title',
-    'subtitle',
-    'body',
-    'sound',
-    'group',
-    'call',
-    'isArchive',
-    'icon',
-    'ciphertext',
-    'level',
-    'volume',
-    'url',
-    'image',
-    'copy',
-    'badge',
-    'autoCopy',
-    'action',
-    'iv',
-    'id',
-    'delete',
-    'markdown',
-  ];
   const result: PushParameters = {};
-  for (const k of list) {
+  for (const k of pushParameterKeys) {
     if (!exclude || !exclude.includes(k)) {
       const v = c.req.query(k);
       if (v) {
@@ -46,6 +47,11 @@ const parseQuery = (c: Context, exclude?: Array<keyof PushParameters>) => {
     }
   }
   return result;
+};
+
+const hasPushQuery = (c: Context) => {
+  const searchParams = new URL(c.req.url).searchParams;
+  return pushParameterKeys.some((key) => searchParams.has(key));
 };
 
 const registerV1 = async (app: Hono, api: API) => {
@@ -204,6 +210,22 @@ export const createHono = <T extends Env>(options: Options) => {
 
   // compat v1 API
   registerV1(router as unknown as Hono, api);
+
+  router.get('/:device_key/', async (c) => {
+    if (!hasPushQuery(c)) {
+      return c.text('ok');
+    }
+
+    return c.json(
+      await api.push(
+        {
+          ...parseQuery(c, ['device_key']),
+          device_key: parseParam(c.req.param('device_key')),
+        },
+        c,
+      ),
+    );
+  });
 
   router.all('/', (c) => c.text('ok'));
 
